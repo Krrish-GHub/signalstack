@@ -11,7 +11,22 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import analysis, crawler, db, fetch, internal, interview, llm, research, scheduler, sources
+if __package__ is None or __package__ == "":
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    import app.analysis as analysis
+    import app.crawler as crawler
+    import app.db as db
+    import app.fetch as fetch
+    import app.internal as internal
+    import app.interview as interview
+    import app.llm as llm
+    import app.research as research
+    import app.scheduler as scheduler
+    import app.sources as sources
+else:
+    from . import analysis, crawler, db, fetch, internal, interview, llm, research, scheduler, sources
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -427,3 +442,8 @@ def index():
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

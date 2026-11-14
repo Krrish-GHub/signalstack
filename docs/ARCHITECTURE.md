@@ -160,3 +160,4 @@ Constructs an executive briefing report strictly referencing numbered evidence i
 | **Document Parsing** | PyPDF, openpyxl, csv | Zero-cloud-dependency extraction of PDFs, Excel spreadsheets, and CSVs. |
 | **AI LLM Inference** | Google Gemini (2.0 Flash) / Groq / Ollama | Free-tier compatible, fast structured JSON mode support. |
 | **Frontend UI** | HTML5, Vanilla JavaScript, CSS3 | Instant load time, zero build steps, complete visibility into state. |
+
