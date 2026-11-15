@@ -70,6 +70,13 @@ class StatusIn(BaseModel):
     status: str
 
 
+class ActionIn(BaseModel):
+    action: str
+    reason: Optional[str] = None
+    owner: Optional[str] = "Founder"
+    priority: Optional[str] = "medium"
+
+
 class NoteIn(BaseModel):
     note: str
 
@@ -509,6 +516,26 @@ def update_action(aid: int, body: StatusIn):
     if body.status not in ("open", "in_progress", "done", "dropped"):
         raise HTTPException(400, "Invalid status")
     db.x("UPDATE actions SET status=? WHERE id=?", (body.status, aid))
+    return {"ok": True}
+
+
+@app.post("/api/companies/{cid}/actions")
+def create_action(cid: int, body: ActionIn):
+    company_or_404(cid)
+    if not body.action.strip():
+        raise HTTPException(400, "Action text is required")
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+    aid = db.x(
+        "INSERT INTO actions(company_id, action, reason, owner, priority, status, created) VALUES(?,?,?,?,?,?,?)",
+        (cid, body.action.strip(), body.reason or "", body.owner or "Founder", body.priority or "medium", "open", now_iso)
+    )
+    return {"id": aid, "ok": True}
+
+
+@app.delete("/api/actions/{aid}")
+def delete_action(aid: int):
+    db.x("DELETE FROM actions WHERE id=?", (aid,))
     return {"ok": True}
 
 

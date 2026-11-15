@@ -542,6 +542,7 @@ const CMD_ACTIONS = [
   { title: 'Load Demo Dataset (MeetUniversity)', action: () => { closeCmdPalette(); loadDemoData(); }, icon: 'sparkles', badge: 'Action' },
   { title: 'Configure LLM & Test Connection', action: () => { closeCmdPalette(); openLLMModal(); }, icon: 'sliders', badge: 'Action' },
   { title: 'Export & Dispatch Webhook (Slack/Discord)', action: () => { closeCmdPalette(); openWebhookModal(); }, icon: 'send', badge: 'Action' },
+  { title: 'Keyboard Shortcuts Cheatsheet (?)', action: () => { closeCmdPalette(); openShortcutsModal(); }, icon: 'layers', badge: 'Help' },
   { title: 'Toggle Dark / Light Theme', action: () => { toggleTheme(); closeCmdPalette(); }, icon: 'sun', badge: 'Theme' },
 ];
 
@@ -576,17 +577,107 @@ function executeCmd(idx) {
   else if (c.tab) go(c.tab);
 }
 
+// Keyboard Shortcuts Cheatsheet Modal
+function openShortcutsModal() {
+  Modal.open({
+    title: 'Keyboard Shortcuts Cheatsheet',
+    content: `
+      <div class="shortcuts-grid">
+        <div class="shortcut-row">
+          <span>Global Command Palette</span>
+          <span class="kbd-shortcut">Cmd + K</span>
+        </div>
+        <div class="shortcut-row">
+          <span>Toggle Dark / Light Theme</span>
+          <span class="kbd-shortcut">T</span>
+        </div>
+        <div class="shortcut-row">
+          <span>Load Demo Dataset</span>
+          <span class="kbd-shortcut">D</span>
+        </div>
+        <div class="shortcut-row">
+          <span>Close Drawers & Modals</span>
+          <span class="kbd-shortcut">Esc</span>
+        </div>
+        <div class="shortcut-row">
+          <span>1. Company Setup</span>
+          <span class="kbd-shortcut">1</span>
+        </div>
+        <div class="shortcut-row">
+          <span>2. Intelligence Profile</span>
+          <span class="kbd-shortcut">2</span>
+        </div>
+        <div class="shortcut-row">
+          <span>3. Founder Interview</span>
+          <span class="kbd-shortcut">3</span>
+        </div>
+        <div class="shortcut-row">
+          <span>4. Signal Stack</span>
+          <span class="kbd-shortcut">4</span>
+        </div>
+        <div class="shortcut-row">
+          <span>5. Source Manager</span>
+          <span class="kbd-shortcut">5</span>
+        </div>
+        <div class="shortcut-row">
+          <span>6. Intelligence Feed</span>
+          <span class="kbd-shortcut">6</span>
+        </div>
+        <div class="shortcut-row">
+          <span>7. Monday Brief</span>
+          <span class="kbd-shortcut">7</span>
+        </div>
+        <div class="shortcut-row">
+          <span>8. Scheduler & Auto</span>
+          <span class="kbd-shortcut">8</span>
+        </div>
+        <div class="shortcut-row">
+          <span>9. Runs & Audit Logs</span>
+          <span class="kbd-shortcut">9</span>
+        </div>
+        <div class="shortcut-row">
+          <span>This Shortcuts Guide</span>
+          <span class="kbd-shortcut">?</span>
+        </div>
+      </div>
+    `,
+    footer: `<button class="btn btn-primary" onclick="Modal.close()">Got it</button>`
+  });
+}
+
 // Global Keyboard Shortcuts
 window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     const p = $('cmd-palette');
     p ? closeCmdPalette() : openCmdPalette();
+    return;
   }
   if (e.key === 'Escape') {
     closeCmdPalette();
     closeDrawer();
     Modal.close();
+    return;
+  }
+  // Ignore single key shortcuts if focused on input/textarea/select
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+  if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+    e.preventDefault();
+    openShortcutsModal();
+  } else if (e.key.toLowerCase() === 't') {
+    e.preventDefault();
+    toggleTheme();
+  } else if (e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    loadDemoData();
+  } else if (/^[1-9]$/.test(e.key)) {
+    const idx = parseInt(e.key, 10) - 1;
+    if (idx >= 0 && idx < TABS.length) {
+      e.preventDefault();
+      go(TABS[idx].id);
+    }
   }
 });
 
@@ -652,6 +743,10 @@ function renderTopBar() {
 
       <button class="filter-pill-btn" onclick="openCmdPalette()" title="Press Cmd+K to search">
         ${icon('search', 12)} <span style="font-family:var(--font-mono);font-size:11px;">Cmd+K</span>
+      </button>
+
+      <button class="filter-pill-btn" onclick="openShortcutsModal()" title="Keyboard Shortcuts (?)">
+        <span style="font-family:var(--font-mono);font-size:11px;font-weight:700;">?</span>
       </button>
     </div>
 
@@ -1423,9 +1518,49 @@ async function vStack() {
 // -------------------------------------------------------------
 // TAB 5: SOURCE MANAGER
 // -------------------------------------------------------------
+// TAB 5: SOURCE MANAGER WITH HEALTH DIAGNOSTICS & CATEGORY BAR
+// -------------------------------------------------------------
 async function vSources() {
   const rows = await api('/companies/' + State.cid + '/sources');
   const container = $('view-container');
+
+  const catCounts = { customers: 0, competitors: 0, market: 0, internal: 0 };
+  rows.forEach(s => {
+    if (catCounts[s.category] !== undefined) catCounts[s.category]++;
+  });
+
+  const metricsHtml = `
+    <div class="source-metric-grid">
+      <div class="source-metric-card" onclick="filterSourcesByCategory('customers')" title="Filter by Customer Signals">
+        <div>
+          <div class="source-metric-lbl">Customers</div>
+          <div class="source-metric-val">${catCounts.customers}</div>
+        </div>
+        ${icon('users', 22, 'text-cyan')}
+      </div>
+      <div class="source-metric-card" onclick="filterSourcesByCategory('competitors')" title="Filter by Competitor Watch">
+        <div>
+          <div class="source-metric-lbl">Competitors</div>
+          <div class="source-metric-val">${catCounts.competitors}</div>
+        </div>
+        ${icon('swords', 22, 'text-primary')}
+      </div>
+      <div class="source-metric-card" onclick="filterSourcesByCategory('market')" title="Filter by Market & Policy">
+        <div>
+          <div class="source-metric-lbl">Market & Policy</div>
+          <div class="source-metric-val">${catCounts.market}</div>
+        </div>
+        ${icon('globe', 22, 'text-emerald')}
+      </div>
+      <div class="source-metric-card" onclick="filterSourcesByCategory('internal')" title="Filter by Internal Diagnostics">
+        <div>
+          <div class="source-metric-lbl">Internal Notes</div>
+          <div class="source-metric-val">${catCounts.internal}</div>
+        </div>
+        ${icon('folder', 22, 'text-amber')}
+      </div>
+    </div>
+  `;
 
   container.innerHTML = `
     <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -1438,6 +1573,8 @@ async function vSources() {
         <button class="btn btn-primary" onclick="toggleAddSourceForm()">${icon('plus', 14)} Add Custom Source</button>
       </div>
     </div>
+
+    ${metricsHtml}
 
     <div id="add-src-card" class="card mb-4 hidden">
       <div class="card-header">
@@ -1482,6 +1619,7 @@ async function vSources() {
           </div>
         </div>
         <div class="flex gap-2">
+          <button class="filter-pill-btn" onclick="filterSourcesByCategory('')" style="font-size:11px;">Show All</button>
           <input type="text" id="src-filter" placeholder="Search sources..." onkeyup="filterSourcesTable()" style="max-width:220px;padding:5px 10px;font-size:12px;">
         </div>
       </div>
@@ -1537,6 +1675,14 @@ async function vSources() {
       </div>
     </div>
   `;
+}
+
+function filterSourcesByCategory(cat) {
+  const input = $('src-filter');
+  if (input) {
+    input.value = cat;
+    filterSourcesTable();
+  }
 }
 
 function toggleAddSourceForm() {
@@ -1599,6 +1745,9 @@ async function vFeed() {
 
     <!-- TIER 2: Visual Signal Analytics Hero Banner -->
     <div id="feed-stats-hero" class="mb-4"></div>
+
+    <!-- Strategy 2x2 Radar Matrix -->
+    <div id="feed-radar-container"></div>
 
     <!-- Filter Card with Quick-Filter Pills -->
     <div class="card mb-4">
@@ -1872,6 +2021,11 @@ async function loadFeed() {
     State.cachedItems = rows;
     rows.forEach(r => { State.evidenceMap[r.id] = r; });
 
+    const radarEl = $('feed-radar-container');
+    if (radarEl) {
+      radarEl.innerHTML = renderStrategyRadar(rows);
+    }
+
     if (!rows.length) {
       resEl.innerHTML = `
         <div class="empty-state card">
@@ -1892,6 +2046,131 @@ async function loadFeed() {
   } catch (e) {
     if (resEl) resEl.innerHTML = `<div class="card text-rose" style="padding:16px;">Failed to load feed: ${esc(e.message)}</div>`;
   }
+}
+
+// Strategy 2x2 Radar Visualizer
+function renderStrategyRadar(rows) {
+  if (!rows || !rows.length) return '';
+  const total = rows.length;
+
+  return `
+    <div class="strategy-matrix-card mb-4">
+      <div class="matrix-header">
+        <div class="flex items-center gap-2">
+          ${icon('activity', 16, 'text-primary')}
+          <div>
+            <h4 style="font-size:13px;font-weight:700;color:var(--text-primary);letter-spacing:-0.01em;">STRATEGIC 2x2 RADAR // CONTINUOUS INTELLIGENCE MATRIX</h4>
+            <div style="font-size:11px;color:var(--text-muted);">Interactive distribution of ${total} active signals by Strategic Impact (Y-Axis) vs. Sentiment (X-Axis)</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3" style="font-size:11px;">
+          <span class="flex items-center gap-1"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-emerald);display:inline-block;"></span> Opportunity</span>
+          <span class="flex items-center gap-1"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-rose);display:inline-block;"></span> Threat / Risk</span>
+          <span class="flex items-center gap-1"><span style="width:8px;height:8px;border-radius:50%;background:var(--accent-cyan);display:inline-block;"></span> Neutral</span>
+          <span class="text-muted">(Click dot to locate signal)</span>
+        </div>
+      </div>
+
+      <div class="matrix-viewport" id="radar-viewport">
+        <svg class="matrix-svg" viewBox="0 0 1000 240" preserveAspectRatio="none">
+          <line x1="0" y1="120" x2="1000" y2="120" class="matrix-axis-line" />
+          <line x1="500" y1="0" x2="500" y2="240" class="matrix-axis-line" />
+          <line x1="0" y1="60" x2="1000" y2="60" class="matrix-grid-line" />
+          <line x1="0" y1="180" x2="1000" y2="180" class="matrix-grid-line" />
+
+          <text x="20" y="24" class="matrix-quadrant-label" style="fill:var(--accent-rose);opacity:0.85;">⚡ CRITICAL RISKS (DEFENSIVE PRIORITY)</text>
+          <text x="980" y="24" text-anchor="end" class="matrix-quadrant-label" style="fill:var(--accent-emerald);opacity:0.85;">🚀 STRATEGIC BREAKOUTS (EXPAND)</text>
+          <text x="20" y="228" class="matrix-quadrant-label">🛡️ MONITORED FRICTIONS</text>
+          <text x="980" y="228" text-anchor="end" class="matrix-quadrant-label">💡 OPERATIONAL GAINS</text>
+
+          <g id="radar-points-layer">
+            ${rows.map(r => {
+              const score = Math.round(r.score || 50);
+              const y = Math.round(220 - (Math.max(10, Math.min(100, score)) / 100) * 195);
+              let x = 500;
+              const jitter = ((r.id * 137) % 320) - 160;
+              if (r.signal_type === 'threat') {
+                x = Math.max(50, Math.min(460, 260 + jitter));
+              } else if (r.signal_type === 'opportunity') {
+                x = Math.max(540, Math.min(950, 740 + jitter));
+              } else {
+                x = Math.max(460, Math.min(540, 500 + (jitter * 0.2)));
+              }
+              let col = '#06b6d4';
+              if (r.signal_type === 'threat') col = '#f43f5e';
+              if (r.signal_type === 'opportunity') col = '#10b981';
+              const isHigh = score >= 80;
+              const radius = isHigh ? 8 : 5.5;
+
+              return `
+                <g class="matrix-point-group" onclick="focusSignalCard(${r.id})" onmouseover="showRadarTooltip(event, ${r.id})" onmouseout="hideRadarTooltip()" style="cursor:pointer;">
+                  ${isHigh ? `<circle cx="${x}" cy="${y}" r="${radius + 5}" fill="${col}" opacity="0.25"><animate attributeName="r" values="${radius+3};${radius+8};${radius+3}" dur="2s" repeatCount="indefinite"/></circle>` : ''}
+                  <circle class="matrix-point" cx="${x}" cy="${y}" r="${radius}" fill="${col}" stroke="#0f172a" stroke-width="1.5" />
+                </g>
+              `;
+            }).join('')}
+          </g>
+        </svg>
+        <div id="radar-tooltip" class="matrix-tooltip"></div>
+      </div>
+    </div>
+  `;
+}
+
+function focusSignalCard(id) {
+  const card = $(`signal-card-${id}`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.style.transition = 'box-shadow 0.3s, border-color 0.3s';
+    card.style.borderColor = 'var(--accent-primary)';
+    card.style.boxShadow = '0 0 24px -2px var(--accent-primary-glow)';
+    setTimeout(() => {
+      card.style.borderColor = '';
+      card.style.boxShadow = '';
+    }, 2400);
+  }
+}
+
+function showRadarTooltip(evt, id) {
+  const item = State.evidenceMap[id];
+  const tip = $('radar-tooltip');
+  if (!item || !tip) return;
+  const vp = $('radar-viewport');
+  const rect = vp.getBoundingClientRect();
+  const x = evt.clientX - rect.left;
+  const y = evt.clientY - rect.top;
+
+  tip.style.left = `${x}px`;
+  tip.style.top = `${y}px`;
+  tip.innerHTML = `
+    <div style="font-weight:700;margin-bottom:4px;color:var(--text-primary);font-size:12px;">${esc(item.title)}</div>
+    <div class="flex items-center justify-between" style="font-size:11px;color:var(--text-muted);border-top:1px solid var(--border-subtle);padding-top:4px;margin-top:4px;">
+      <span>${esc(item.category)} &bull; ${esc(item.signal_type)}</span>
+      <span style="font-weight:700;color:var(--accent-primary);">Score: ${Math.round(item.score || 0)}</span>
+    </div>
+  `;
+  tip.classList.add('visible');
+}
+
+function hideRadarTooltip() {
+  const tip = $('radar-tooltip');
+  if (tip) tip.classList.remove('visible');
+}
+
+function copySignalCard(id) {
+  const r = State.evidenceMap[id];
+  if (!r) return;
+  const text = `[Signal #${r.id}] ${r.title}\nScore: ${Math.round(r.score || 0)}/100 | Type: ${r.signal_type} | Category: ${r.category}\nSource: ${r.source_name || r.url}\n${r.snippet ? `Evidence: "${r.snippet}"` : ''}`;
+  navigator.clipboard.writeText(text).then(() => {
+    Toast.success('Copied to Clipboard', `Signal #${r.id} copied in markdown format.`);
+  }).catch(() => {
+    Toast.info('Copied', text.slice(0, 50) + '...');
+  });
+}
+
+function toggleCounterEvidence(id) {
+  const el = $(`counter-evidence-${id}`);
+  if (el) el.classList.toggle('hidden');
 }
 
 // Mini Equalizer Spark-Bars Helper
@@ -1935,7 +2214,7 @@ function renderFeedCards(rows) {
         else if (score != null) scoreColor = 'var(--accent-amber)';
 
         return `
-          <div class="card" style="padding:18px;">
+          <div class="card ${score >= 80 ? 'signal-card-high-priority' : ''}" id="signal-card-${r.id}" style="padding:18px;">
             <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
               <div class="flex items-center gap-2">
                 <span class="badge badge-indigo">${esc(r.category)}</span>
@@ -1989,12 +2268,23 @@ function renderFeedCards(rows) {
                 <span>Cred: <strong>${r.source_reliability ? Math.round(r.source_reliability * 100) + '%' : '-'}</strong></span>
               </div>
               <div class="flex gap-2">
-                <button class="badge badge-indigo" onclick="inspectEvidence(${r.id})" style="cursor:pointer;">${icon('eye', 11)} Inspect Evidence</button>
+                <button class="badge badge-indigo" onclick="inspectEvidence(${r.id})" style="cursor:pointer;" title="Inspect verbatim proof in drawer">${icon('eye', 11)} Verbatim Proof</button>
+                <button class="badge badge-neutral" onclick="copySignalCard(${r.id})" style="cursor:pointer;" title="Copy signal markdown">${icon('copy', 11)} Copy</button>
+                ${(a.counter_evidence || a.assumptions) ? `
+                  <button class="badge badge-neutral" onclick="toggleCounterEvidence(${r.id})" style="cursor:pointer;" title="Toggle counter-evidence and assumptions">${icon('layers', 11)} Rigor</button>
+                ` : ''}
                 <a href="${esc(r.url)}" target="_blank" class="badge badge-neutral" style="text-decoration:none;">
                   <span>Original Link</span> ${icon('externalLink', 10)}
                 </a>
               </div>
             </div>
+
+            ${(a.counter_evidence || a.assumptions) ? `
+              <div id="counter-evidence-${r.id}" class="counter-evidence-drawer hidden">
+                ${a.counter_evidence ? `<div style="margin-bottom:6px;"><strong style="color:var(--accent-amber);">Counter-Evidence Tested:</strong> ${esc(a.counter_evidence)}</div>` : ''}
+                ${a.assumptions ? `<div><strong style="color:var(--text-primary);">Core Assumptions:</strong> ${esc(a.assumptions)}</div>` : ''}
+              </div>
+            ` : ''}
           </div>
         `;
       }).join('')}
@@ -2103,6 +2393,7 @@ async function vBrief() {
           </div>
         </div>
         <div class="flex gap-2">
+          <button class="btn btn-sm btn-primary" onclick="openAddActionModal()">${icon('plus', 12)} Add Initiative</button>
           <button class="filter-pill-btn ${State.actionViewMode === 'kanban' ? 'active' : ''}" onclick="setActionView('kanban')">Kanban Board</button>
           <button class="filter-pill-btn ${State.actionViewMode === 'table' ? 'active' : ''}" onclick="setActionView('table')">Table View</button>
         </div>
@@ -2154,19 +2445,25 @@ function renderActionsKanban(actions) {
             </div>
             <div class="kanban-col-body">
               ${colActs.length ? colActs.map(a => `
-                <div class="kanban-card">
+                <div class="kanban-card ${a.status === 'done' ? 'action-row-completed' : ''}">
                   <div class="flex items-center justify-between mb-2">
                     <span class="badge ${a.priority === 'high' ? 'badge-rose' : a.priority === 'medium' ? 'badge-amber' : 'badge-cyan'}">${esc(a.priority)}</span>
                     <span class="badge badge-indigo" style="font-size:10px;">${esc(a.owner || 'Owner')}</span>
                   </div>
-                  <div style="font-weight:600;font-size:13px;color:var(--text-primary);margin-bottom:6px;line-height:1.4;">
-                    ${esc(a.action)}
+                  <div class="flex items-start gap-2 mb-2">
+                    <button class="action-check-btn ${a.status === 'done' ? 'checked' : ''}" onclick="toggleActionDone(${a.id}, '${a.status}')" title="${a.status === 'done' ? 'Mark incomplete' : 'Mark completed'}">
+                      ${icon('check', 12)}
+                    </button>
+                    <div style="font-weight:600;font-size:13px;color:var(--text-primary);line-height:1.4;" class="action-title-text">
+                      ${esc(a.action)}
+                    </div>
                   </div>
-                  ${a.reason ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;">${esc(a.reason)}</div>` : ''}
+                  ${a.reason ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;padding-left:30px;">${esc(a.reason)}</div>` : ''}
                   <div class="flex justify-between items-center pt-2" style="border-top:1px dashed var(--border-subtle);">
                     <select onchange="setAct(${a.id}, this.value)" style="font-size:11px;padding:2px 4px;">
                       ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>Move: ${s.toUpperCase()}</option>`).join('')}
                     </select>
+                    <button class="icon-btn" onclick="deleteAction(${a.id})" title="Delete initiative" style="padding:2px 4px;">${icon('trash', 11, 'text-rose')}</button>
                   </div>
                 </div>
               `).join('') : '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px;">No items in this column.</div>'}
@@ -2199,15 +2496,25 @@ function renderActionsTable(actions) {
             if (a.priority === 'low') priBadge = `<span class="badge badge-cyan">Low</span>`;
 
             return `
-              <tr>
-                <td style="font-weight:600;color:var(--text-primary);max-width:320px;">${esc(a.action)}</td>
+              <tr class="${a.status === 'done' ? 'action-row-completed' : ''}">
+                <td style="max-width:340px;">
+                  <div class="flex items-center gap-2">
+                    <button class="action-check-btn ${a.status === 'done' ? 'checked' : ''}" onclick="toggleActionDone(${a.id}, '${a.status}')" title="${a.status === 'done' ? 'Mark incomplete' : 'Mark completed'}">
+                      ${icon('check', 12)}
+                    </button>
+                    <span style="font-weight:600;color:var(--text-primary);" class="action-title-text">${esc(a.action)}</span>
+                  </div>
+                </td>
                 <td><span class="badge badge-indigo">${esc(a.owner || 'Founder')}</span></td>
                 <td>${priBadge}</td>
                 <td style="font-size:12px;color:var(--text-secondary);max-width:280px;">${esc(a.reason || '')}</td>
                 <td>
-                  <select onchange="setAct(${a.id}, this.value)" style="padding:4px 8px;font-size:12px;border-radius:var(--radius-sm);">
-                    ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s.toUpperCase()}</option>`).join('')}
-                  </select>
+                  <div class="flex items-center gap-2">
+                    <select onchange="setAct(${a.id}, this.value)" style="padding:4px 8px;font-size:12px;border-radius:var(--radius-sm);">
+                      ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s.toUpperCase()}</option>`).join('')}
+                    </select>
+                    <button class="icon-btn" onclick="deleteAction(${a.id})" title="Delete action" style="padding:4px;">${icon('trash', 12, 'text-rose')}</button>
+                  </div>
                 </td>
               </tr>
             `;
@@ -2216,6 +2523,116 @@ function renderActionsTable(actions) {
       </table>
     </div>
   `;
+}
+
+// Interactive Action Tracking Handlers
+function openAddActionModal() {
+  Modal.open({
+    title: 'Add Recommended Initiative',
+    content: `
+      <div class="form-group">
+        <label class="form-label">Initiative / Action Item</label>
+        <input type="text" id="new-act-text" placeholder="e.g. Partner with student housing provider in Dublin" autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Strategic Rationale & Cited Proof</label>
+        <textarea id="new-act-reason" rows="2" placeholder="e.g. 38% of Irish offer holders report accommodation bottleneck [4]"></textarea>
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label class="form-label">Owner</label>
+          <input type="text" id="new-act-owner" placeholder="e.g. Head of Admissions or CEO" value="Founder">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority</label>
+          <select id="new-act-priority">
+            <option value="high">High Priority</option>
+            <option value="medium" selected>Medium Priority</option>
+            <option value="low">Low Priority</option>
+          </select>
+        </div>
+      </div>
+    `,
+    footer: `
+      <button class="btn btn-outline" onclick="Modal.close()">Cancel</button>
+      <button class="btn btn-primary" onclick="handleAddAction()">${icon('plus', 14)} Add Initiative</button>
+    `
+  });
+}
+
+async function handleAddAction() {
+  const action = $('new-act-text').value.trim();
+  const reason = $('new-act-reason').value.trim();
+  const owner = $('new-act-owner').value.trim() || 'Founder';
+  const priority = $('new-act-priority').value;
+
+  if (!action) {
+    Toast.error('Validation Error', 'Initiative text is required.');
+    return;
+  }
+
+  try {
+    await api(`/companies/${State.cid}/actions`, 'POST', { action, reason, owner, priority });
+    Modal.close();
+    Toast.success('Initiative Added', 'New action item saved to tracking matrix.');
+    vBrief();
+  } catch (e) {
+    Toast.error('Error', e.message);
+  }
+}
+
+async function toggleActionDone(aid, currentStatus) {
+  const nextStatus = currentStatus === 'done' ? 'open' : 'done';
+  try {
+    await api('/actions/' + aid, 'PATCH', { status: nextStatus });
+    if (nextStatus === 'done') {
+      Toast.success('Initiative Completed! 🎉', 'Marked as completed in decision log.');
+    } else {
+      Toast.info('Initiative Reopened', 'Action item returned to active status.');
+    }
+    vBrief();
+  } catch (e) {
+    Toast.error('Update Failed', e.message);
+  }
+}
+
+async function deleteAction(aid) {
+  if (!confirm('Are you sure you want to delete this action item?')) return;
+  try {
+    await api('/actions/' + aid, 'DELETE');
+    Toast.success('Action Deleted', 'Removed from action matrix.');
+    vBrief();
+  } catch (e) {
+    Toast.error('Delete Failed', e.message);
+  }
+}
+
+let currentBriefFontSize = 14;
+function changeBriefFontSize(delta) {
+  currentBriefFontSize = Math.max(12, Math.min(18, currentBriefFontSize + delta));
+  const el = document.querySelector('.brief-paper-container');
+  if (el) {
+    el.style.fontSize = `${currentBriefFontSize}px`;
+  }
+}
+
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+async function copyBriefMarkdown() {
+  const el = $('brief-paper-content');
+  if (!el) return;
+  const text = el.innerText || el.textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    Toast.success('Copied to Clipboard', 'Full Monday Brief text copied.');
+  } catch (e) {
+    Toast.info('Copied', 'Brief text ready to paste.');
+  }
 }
 
 async function showBrief(id) {
@@ -2240,6 +2657,24 @@ async function showBrief(id) {
       const b = await api('/briefs/' + id);
       const htmlBody = formatBriefMarkdown(b.markdown);
       viewEl.innerHTML = `
+        <div class="brief-reading-toolbar">
+          <div class="toc-chip-bar">
+            <span style="font-size:11px;font-weight:700;color:var(--text-muted);margin-right:4px;">SECTIONS:</span>
+            <button class="toc-chip" onclick="scrollToSection('sec-exec')">${icon('sparkles', 11)} Exec Summary</button>
+            <button class="toc-chip" onclick="scrollToSection('sec-cust')">${icon('users', 11)} Customers</button>
+            <button class="toc-chip" onclick="scrollToSection('sec-comp')">${icon('swords', 11)} Competitors</button>
+            <button class="toc-chip" onclick="scrollToSection('sec-mkt')">${icon('globe', 11)} Market</button>
+            <button class="toc-chip" onclick="scrollToSection('sec-init')">${icon('check', 11)} Action Matrix</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="font-size-ctrl" title="Adjust Brief Font Size">
+              <button class="font-size-btn" onclick="changeBriefFontSize(-1)">A-</button>
+              <button class="font-size-btn" onclick="changeBriefFontSize(1)">A+</button>
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="copyBriefMarkdown()">${icon('copy', 12)} Copy Text</button>
+          </div>
+        </div>
+
         <div class="brief-paper-container">
           <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:20px;">
             <div class="flex items-center gap-2">
@@ -2248,7 +2683,7 @@ async function showBrief(id) {
             </div>
             <span class="text-muted" style="font-size:12px;">Generated: ${esc(b.created.slice(0, 16))}</span>
           </div>
-          ${htmlBody}
+          <div id="brief-paper-content">${htmlBody}</div>
         </div>
       `;
     } catch (e) {
@@ -2257,12 +2692,13 @@ async function showBrief(id) {
   }
 }
 
-// Format Markdown with Interactive Citation Pills
+// Format Markdown with Interactive Citation Pills & Anchor Sections
 function formatBriefMarkdown(md) {
   if (!md) return '<p class="text-muted">Empty report content.</p>';
   const lines = md.split('\n');
   const out = [];
   let inList = false;
+  let secIdx = 0;
 
   for (let line of lines) {
     let s = esc(line);
@@ -2281,9 +2717,17 @@ function formatBriefMarkdown(md) {
     if (inList) { out.push('</ul>'); inList = false; }
 
     if (line.startsWith('# ')) {
-      out.push(`<h1>${s.slice(2)}</h1>`);
+      out.push(`<h1 id="sec-title">${s.slice(2)}</h1>`);
     } else if (line.startsWith('## ')) {
-      out.push(`<h2>${s.slice(3)}</h2>`);
+      secIdx++;
+      let secId = `sec-${secIdx}`;
+      const lower = line.toLowerCase();
+      if (lower.includes('executive') || lower.includes('summary')) secId = 'sec-exec';
+      else if (lower.includes('customer')) secId = 'sec-cust';
+      else if (lower.includes('competitor')) secId = 'sec-comp';
+      else if (lower.includes('market') || lower.includes('regulat')) secId = 'sec-mkt';
+      else if (lower.includes('initiative') || lower.includes('action')) secId = 'sec-init';
+      out.push(`<h2 id="${secId}">${s.slice(3)}</h2>`);
     } else if (line.startsWith('### ')) {
       out.push(`<h3>${s.slice(4)}</h3>`);
     } else if (line.trim()) {
