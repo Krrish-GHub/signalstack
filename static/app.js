@@ -1,6 +1,6 @@
 /**
  * Signal Stack — Executive Intelligence Dashboard
- * Modern Vanilla JavaScript Frontend
+ * Modern Vanilla JavaScript Frontend with Tier 1, 2, and 3 Enhancements
  */
 
 // Application State
@@ -14,6 +14,10 @@ const State = {
   timer: null,
   activePipelineRunId: null,
   feedViewMode: localStorage.getItem('ss_feed_view') || 'cards', // 'cards' | 'table'
+  actionViewMode: localStorage.getItem('ss_action_view') || 'kanban', // 'kanban' | 'table'
+  feedQuickFilter: null,
+  cachedItems: [],
+  evidenceMap: {},
 };
 
 // Set theme attribute immediately
@@ -69,6 +73,8 @@ function icon(name, size = 16, cls = '') {
     uploadCloud: `<svg width="${s}" height="${s}" class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path><polyline points="16 16 12 12 8 16"></polyline></svg>`,
     grid: `<svg width="${s}" height="${s}" class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>`,
     list: `<svg width="${s}" height="${s}" class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>`,
+    send: `<svg width="${s}" height="${s}" class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>`,
+    eye: `<svg width="${s}" height="${s}" class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`,
   };
   return icons[name] || '';
 }
@@ -252,6 +258,338 @@ async function pickCompany(id) {
   renderView();
 }
 
+// -------------------------------------------------------------
+// TIER 1: SEED DEMO DATASET
+// -------------------------------------------------------------
+async function loadDemoData() {
+  Modal.open({
+    title: 'Load Live Demo Company',
+    content: `
+      <p style="margin-bottom:12px;">This will automatically initialize <strong>MeetUniversity</strong> with:</p>
+      <ul style="padding-left:20px;margin-bottom:16px;font-size:13px;line-height:1.7;color:var(--text-secondary);">
+        <li>✓ Verified web research dossier with verbatim quotes & evidence URLs</li>
+        <li>✓ Full 10-question adaptive founder interview transcript</li>
+        <li>✓ Synthesized Company Intelligence Profile</li>
+        <li>✓ 21 active sources across Customers, Competitors, Market, and Internal</li>
+        <li>✓ 12 ingested intelligence signals scored across 6 dimensions</li>
+        <li>✓ An executive Monday Morning Brief with clickable citations [ID] and action matrix</li>
+      </ul>
+      <p style="font-size:12px;color:var(--text-muted);">Zero API key required to explore and inspect.</p>
+    `,
+    footer: `
+      <button class="btn btn-outline" onclick="Modal.close()">Cancel</button>
+      <button class="btn btn-primary" id="btn-seed-confirm" onclick="confirmLoadDemo()">${icon('sparkles', 14)} Initialize Demo Now</button>
+    `
+  });
+}
+
+async function confirmLoadDemo() {
+  const btn = $('btn-seed-confirm');
+  await withBusy(btn, 'Seeding Demo Dataset', async () => {
+    const res = await api('/demo/seed', 'POST');
+    Modal.close();
+    State.cid = res.id;
+    localStorage.setItem('ss_cid', State.cid);
+    await loadCompanies();
+    renderTopBar();
+    renderNav();
+    Toast.success('Demo Loaded', 'MeetUniversity intelligence stack is fully loaded and ready!');
+    go('brief');
+  });
+}
+
+// -------------------------------------------------------------
+// TIER 1: IN-APP LLM CONFIGURATION MODAL
+// -------------------------------------------------------------
+async function openLLMModal() {
+  let cfg = { provider: 'gemini', model: 'gemini-2.0-flash', has_gemini_key: false, has_groq_key: false, ollama_url: 'http://localhost:11434', reachable: false };
+  try { cfg = await api('/llm/config'); } catch (e) {}
+
+  Modal.open({
+    title: 'LLM Backend & API Key Settings',
+    content: `
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+        Signal Stack supports free LLM backends: Google Gemini free tier, Groq free tier, or a local Ollama instance.
+      </div>
+      <div class="form-group">
+        <label class="form-label">Provider</label>
+        <select id="cfg-provider" onchange="toggleLLMKeyInput(this.value)">
+          <option value="gemini" ${cfg.provider === 'gemini' ? 'selected' : ''}>Google Gemini (Recommended / Free Tier)</option>
+          <option value="groq" ${cfg.provider === 'groq' ? 'selected' : ''}>Groq (Free Tier / Llama 3.3)</option>
+          <option value="ollama" ${cfg.provider === 'ollama' ? 'selected' : ''}>Ollama (Local / No Key Needed)</option>
+        </select>
+      </div>
+      <div class="form-group" id="cfg-key-group" style="${cfg.provider === 'ollama' ? 'display:none;' : ''}">
+        <label class="form-label">API Key ${cfg.has_gemini_key || cfg.has_groq_key ? '<span class="badge badge-emerald">Key Saved</span>' : ''}</label>
+        <input type="password" id="cfg-key" placeholder="Paste your API key here (leave blank to keep current)">
+        <div class="form-hint">Free Gemini key from <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a> or Groq key from <a href="https://console.groq.com" target="_blank">console.groq.com</a>.</div>
+      </div>
+      <div class="form-group" id="cfg-ollama-group" style="${cfg.provider !== 'ollama' ? 'display:none;' : ''}">
+        <label class="form-label">Ollama Host URL</label>
+        <input type="text" id="cfg-url" value="${esc(cfg.ollama_url || 'http://localhost:11434')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Model Identifier</label>
+        <input type="text" id="cfg-model" value="${esc(cfg.model || 'gemini-2.0-flash')}">
+      </div>
+      <div id="cfg-test-status" class="mt-2"></div>
+    `,
+    footer: `
+      <button class="btn btn-outline" onclick="Modal.close()">Close</button>
+      <button class="btn btn-primary" id="btn-save-cfg" onclick="saveLLMConfig()">${icon('check', 14)} Test & Save Configuration</button>
+    `
+  });
+}
+
+function toggleLLMKeyInput(val) {
+  const kg = $('cfg-key-group');
+  const og = $('cfg-ollama-group');
+  const mg = $('cfg-model');
+  if (val === 'ollama') {
+    if (kg) kg.style.display = 'none';
+    if (og) og.style.display = 'block';
+    if (mg) mg.value = 'llama3.1:8b';
+  } else if (val === 'gemini') {
+    if (kg) kg.style.display = 'block';
+    if (og) og.style.display = 'none';
+    if (mg) mg.value = 'gemini-2.0-flash';
+  } else if (val === 'groq') {
+    if (kg) kg.style.display = 'block';
+    if (og) og.style.display = 'none';
+    if (mg) mg.value = 'llama-3.3-70b-versatile';
+  }
+}
+
+async function saveLLMConfig() {
+  const provider = $('cfg-provider').value;
+  const key = $('cfg-key') ? $('cfg-key').value.trim() : null;
+  const model = $('cfg-model').value.trim();
+  const url = $('cfg-url') ? $('cfg-url').value.trim() : null;
+  const btn = $('btn-save-cfg');
+  const statusEl = $('cfg-test-status');
+
+  await withBusy(btn, 'Testing Connection', async () => {
+    const res = await api('/llm/config', 'POST', { provider, api_key: key || undefined, model, ollama_url: url });
+    State.health = { llm_provider: res.provider, llm_reachable: res.reachable };
+    renderTopBar();
+    if (res.reachable) {
+      statusEl.innerHTML = `<span class="badge badge-emerald">${icon('check', 12)} Connection successful! Model is reachable.</span>`;
+    } else {
+      statusEl.innerHTML = `<span class="badge badge-rose">${icon('alertTriangle', 12)} Saved, but backend could not connect yet. Check key or service.</span>`;
+    }
+  });
+}
+
+// -------------------------------------------------------------
+// TIER 1: INTERACTIVE EVIDENCE DRAWER
+// -------------------------------------------------------------
+async function inspectEvidence(id) {
+  closeDrawer();
+  const drawerOverlay = document.createElement('div');
+  drawerOverlay.className = 'evidence-drawer-overlay';
+  drawerOverlay.id = 'evidence-drawer';
+  drawerOverlay.innerHTML = `
+    <div class="evidence-drawer">
+      <div class="evidence-drawer-header">
+        <div class="flex items-center gap-2">
+          ${icon('shieldCheck', 18, 'text-emerald')}
+          <h3 class="card-title">Evidence Inspector: Record #${id}</h3>
+        </div>
+        <button class="icon-btn" onclick="closeDrawer()">${icon('x', 16)}</button>
+      </div>
+      <div class="evidence-drawer-body" id="drawer-content">
+        <div style="text-align:center;padding:32px;"><span class="spinner"></span> Loading evidence details...</div>
+      </div>
+    </div>
+  `;
+  drawerOverlay.addEventListener('click', (e) => {
+    if (e.target === drawerOverlay) closeDrawer();
+  });
+  document.body.appendChild(drawerOverlay);
+
+  // Fetch or look up item
+  try {
+    let item = State.evidenceMap[id];
+    if (!item) {
+      const items = await api(`/companies/${State.cid}/items?limit=200`);
+      items.forEach(it => { State.evidenceMap[it.id] = it; });
+      item = State.evidenceMap[id];
+    }
+    const c = $('drawer-content');
+    if (!item) {
+      c.innerHTML = `<p class="text-muted">Evidence record #${id} not found in active dataset.</p>`;
+      return;
+    }
+
+    const a = item.analysis || {};
+    const score = item.score != null ? Math.round(item.score) : 0;
+    c.innerHTML = `
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div class="flex items-center gap-2">
+          <span class="badge badge-indigo">${esc(item.category)}</span>
+          <span class="badge ${item.signal_type === 'opportunity' ? 'badge-emerald' : item.signal_type === 'threat' ? 'badge-rose' : 'badge-neutral'}">
+            ${esc(item.signal_type || 'neutral')}
+          </span>
+          <span class="badge badge-cyan">${esc(item.verification)}</span>
+        </div>
+        <div style="font-size:16px;font-weight:700;color:var(--accent-primary);">
+          Score: ${score}/100
+        </div>
+      </div>
+
+      <h3 style="font-size:16px;line-height:1.4;margin-bottom:8px;color:var(--text-primary);">
+        ${esc(item.title)}
+      </h3>
+
+      <div style="font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:6px;margin-bottom:16px;">
+        <span>Published: <strong>${esc((item.published || item.discovered || '').slice(0, 10))}</strong></span>
+        &bull;
+        <a href="${esc(item.url)}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;color:var(--accent-primary);">
+          <span>Original Source</span> ${icon('externalLink', 11)}
+        </a>
+      </div>
+
+      <!-- Verbatim Quote -->
+      <div style="background:var(--bg-input);border-left:4px solid var(--accent-emerald);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:4px;">
+          ${icon('shieldCheck', 12, 'text-emerald')} <strong>Verbatim Evidence Quote</strong>
+        </div>
+        <div style="font-size:13px;color:var(--text-primary);font-style:italic;line-height:1.6;">
+          "${esc(item.snippet || 'Verbatim quote recorded at ingestion.')}"
+        </div>
+      </div>
+
+      <!-- Analysis -->
+      <div style="background:var(--bg-surface-elevated);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+        <div style="margin-bottom:10px;">
+          <strong style="font-size:12px;color:var(--text-muted);text-transform:uppercase;display:block;margin-bottom:4px;">Reported Fact (Corpus Verified):</strong>
+          <span style="font-size:13px;color:var(--text-primary);">${esc(a.what_happened || 'Stated development.')}</span>
+        </div>
+        <div style="margin-bottom:10px;">
+          <strong style="font-size:12px;color:var(--accent-cyan);text-transform:uppercase;display:block;margin-bottom:4px;">Model Strategic Interpretation:</strong>
+          <span style="font-size:13px;color:var(--text-secondary);">${esc(a.why_it_matters || 'Strategic analysis.')}</span>
+        </div>
+        ${a.suggested_response ? `
+          <div>
+            <strong style="font-size:12px;color:var(--accent-emerald);text-transform:uppercase;display:block;margin-bottom:4px;">Tactical Response:</strong>
+            <span style="font-size:13px;color:var(--text-primary);">${esc(a.suggested_response)}</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- 6-Factor Dimension Breakdown -->
+      <div class="card" style="padding:14px;">
+        <div class="text-muted" style="font-size:11px;text-transform:uppercase;margin-bottom:10px;font-weight:600;">6-Factor Scoring Breakdown</div>
+        <div class="grid-2" style="font-size:12px;gap:8px;">
+          <div>Relevance: <strong>${item.relevance ?? '-'}</strong>/10</div>
+          <div>Impact: <strong>${item.impact ?? '-'}</strong>/10</div>
+          <div>Urgency: <strong>${item.urgency ?? '-'}</strong>/10</div>
+          <div>Credibility: <strong>${item.source_reliability ? Math.round(item.source_reliability * 100) + '%' : '-'}</strong></div>
+          <div>Recency Decay: <strong>${item.novelty ? Math.round(item.novelty * 100) + '%' : '-'}</strong></div>
+          <div>Evidence Strength: <strong>${item.evidence_strength ? Math.round(item.evidence_strength * 100) + '%' : '100%'}</strong></div>
+        </div>
+      </div>
+    `;
+  } catch (e) {
+    $('drawer-content').innerHTML = `<p class="text-rose">Failed to load evidence: ${esc(e.message)}</p>`;
+  }
+}
+
+function closeDrawer() {
+  const el = $('evidence-drawer');
+  if (el) el.remove();
+}
+
+// -------------------------------------------------------------
+// TIER 2: COMMAND PALETTE (Cmd+K)
+// -------------------------------------------------------------
+function openCmdPalette() {
+  closeCmdPalette();
+  const overlay = document.createElement('div');
+  overlay.className = 'cmd-palette-overlay';
+  overlay.id = 'cmd-palette';
+  overlay.innerHTML = `
+    <div class="cmd-palette-box">
+      <div class="cmd-search-input-wrap">
+        ${icon('search', 18, 'text-muted')}
+        <input type="text" class="cmd-search-input" id="cmd-input" placeholder="Type a command or jump to tab... (ESC to exit)" autofocus onkeyup="filterCmdPalette(this.value)">
+      </div>
+      <div class="cmd-results-list" id="cmd-list"></div>
+    </div>
+  `;
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeCmdPalette();
+  });
+  document.body.appendChild(overlay);
+  renderCmdItems('');
+  $('cmd-input').focus();
+}
+
+function closeCmdPalette() {
+  const el = $('cmd-palette');
+  if (el) el.remove();
+}
+
+const CMD_ACTIONS = [
+  { title: 'Monday Brief (Dossier & Actions)', tab: 'brief', icon: 'newspaper', badge: 'Tab' },
+  { title: 'Intelligence Feed (Signals & Scores)', tab: 'feed', icon: 'activity', badge: 'Tab' },
+  { title: 'Signal Stack (4 Quadrants)', tab: 'stack', icon: 'layers', badge: 'Tab' },
+  { title: 'Founder Interview (10 Roadmap Questions)', tab: 'interview', icon: 'messageSquare', badge: 'Tab' },
+  { title: 'Company Setup & Fact Research', tab: 'setup', icon: 'building', badge: 'Tab' },
+  { title: 'Intelligence Profile (Pillars & Pivot)', tab: 'profile', icon: 'fileText', badge: 'Tab' },
+  { title: 'Source Manager (Health & Rules)', tab: 'sources', icon: 'rss', badge: 'Tab' },
+  { title: 'Automation & Scheduler (Crons & Audits)', tab: 'settings', icon: 'sliders', badge: 'Tab' },
+  { title: 'Load Demo Dataset (MeetUniversity)', action: () => { closeCmdPalette(); loadDemoData(); }, icon: 'sparkles', badge: 'Action' },
+  { title: 'Configure LLM & Test Connection', action: () => { closeCmdPalette(); openLLMModal(); }, icon: 'sliders', badge: 'Action' },
+  { title: 'Export & Dispatch Webhook (Slack/Discord)', action: () => { closeCmdPalette(); openWebhookModal(); }, icon: 'send', badge: 'Action' },
+  { title: 'Toggle Dark / Light Theme', action: () => { toggleTheme(); closeCmdPalette(); }, icon: 'sun', badge: 'Theme' },
+];
+
+function renderCmdItems(query) {
+  const q = query.toLowerCase();
+  const filtered = CMD_ACTIONS.filter(c => c.title.toLowerCase().includes(q));
+  const list = $('cmd-list');
+  if (!list) return;
+  if (!filtered.length) {
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:13px;">No commands matching "${esc(query)}"</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map((c, idx) => `
+    <div class="cmd-item" onclick="executeCmd(${idx})" onmouseover="this.classList.add('selected')" onmouseout="this.classList.remove('selected')">
+      <div class="flex items-center gap-2">
+        ${icon(c.icon, 16)}
+        <span>${esc(c.title)}</span>
+      </div>
+      <span class="cmd-badge">${esc(c.badge)}</span>
+    </div>
+  `).join('');
+}
+
+function filterCmdPalette(q) {
+  renderCmdItems(q);
+}
+
+function executeCmd(idx) {
+  const c = CMD_ACTIONS[idx];
+  closeCmdPalette();
+  if (c.action) c.action();
+  else if (c.tab) go(c.tab);
+}
+
+// Global Keyboard Shortcuts
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    const p = $('cmd-palette');
+    p ? closeCmdPalette() : openCmdPalette();
+  }
+  if (e.key === 'Escape') {
+    closeCmdPalette();
+    closeDrawer();
+    Modal.close();
+  }
+});
+
 // Delete Active Company
 async function deleteActiveCompany() {
   if (!State.cid) return;
@@ -307,17 +645,21 @@ function renderTopBar() {
           ${icon('plus', 13)} <span>New</span>
         </button>
       </div>
-      ${comp ? `
-        <a href="${esc(comp.url)}" target="_blank" class="badge badge-neutral" style="text-decoration:none;" title="Target Domain">
-          ${icon('globe', 12)} <span>${esc(new URL(comp.url).hostname || comp.url)}</span>
-        </a>
-      ` : ''}
+
+      <button class="btn btn-sm btn-secondary" onclick="loadDemoData()" title="Load Live Demo Company with Pre-populated Signals and Brief">
+        ${icon('sparkles', 13)} <span>Demo Dataset</span>
+      </button>
+
+      <button class="filter-pill-btn" onclick="openCmdPalette()" title="Press Cmd+K to search">
+        ${icon('search', 12)} <span style="font-family:var(--font-mono);font-size:11px;">Cmd+K</span>
+      </button>
     </div>
 
     <div class="header-right">
-      <div class="llm-badge" title="${State.health.llm_reachable ? 'LLM backend is live and answering queries' : 'LLM backend unreachable! Configure API key or start Ollama.'}">
+      <div class="llm-badge" onclick="openLLMModal()" style="cursor:pointer;" title="Click to configure API key / provider">
         <span class="status-dot ${State.health.llm_reachable ? 'online' : 'offline'}"></span>
         <span>${esc(State.health.llm_provider || 'LLM')}</span>
+        ${icon('sliders', 12, 'text-muted')}
       </div>
       <button class="icon-btn" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
         ${icon(State.theme === 'dark' ? 'sun' : 'moon', 16)}
@@ -360,8 +702,11 @@ function renderView() {
       <div class="empty-state card">
         <div class="empty-state-icon">${icon('building', 28)}</div>
         <h3 class="empty-state-title">No Company Selected</h3>
-        <p class="empty-state-desc">Select an existing company target from the top dropdown, or set up a new company to start building its intelligence stack.</p>
-        <button class="btn btn-primary" onclick="go('setup')">${icon('plus', 14)} Register New Company</button>
+        <p class="empty-state-desc">Select an existing company target from the top dropdown, register a new company, or load the pre-populated demo company.</p>
+        <div class="flex gap-2 justify-center">
+          <button class="btn btn-primary" onclick="loadDemoData()">${icon('sparkles', 14)} Load Demo Dataset (MeetUniversity)</button>
+          <button class="btn btn-outline" onclick="go('setup')">${icon('plus', 14)} Register New Company</button>
+        </div>
       </div>
     `;
     return;
@@ -429,7 +774,7 @@ async function handleCreateCompany() {
 }
 
 // -------------------------------------------------------------
-// TAB 1: SETUP & RESEARCH
+// TAB 1: SETUP & RESEARCH WITH MILESTONE STEPPER
 // -------------------------------------------------------------
 async function vSetup() {
   let c = State.company;
@@ -438,7 +783,40 @@ async function vSetup() {
     State.company = c;
   }
 
+  // Milestone readiness calculation
+  const hasRes = c && c.research && c.research.summary;
+  const hasSources = c && c.counts && c.counts.sources_approved > 0;
+  const hasBriefs = c && c.counts && c.counts.briefs > 0;
+
   $('view-container').innerHTML = `
+    <!-- Milestone Stepper -->
+    <div class="milestone-stepper">
+      <div class="milestone-step ${c ? 'done' : 'active'}" onclick="go('setup')">
+        <span class="milestone-num">${c ? '✓' : '1'}</span>
+        <span class="milestone-title">1. Registration</span>
+      </div>
+      <div class="milestone-divider"></div>
+      <div class="milestone-step ${hasRes ? 'done' : c ? 'active' : ''}" onclick="go('setup')">
+        <span class="milestone-num">${hasRes ? '✓' : '2'}</span>
+        <span class="milestone-title">2. Fact Research</span>
+      </div>
+      <div class="milestone-divider"></div>
+      <div class="milestone-step" onclick="go('interview')">
+        <span class="milestone-num">3</span>
+        <span class="milestone-title">3. Founder Interview</span>
+      </div>
+      <div class="milestone-divider"></div>
+      <div class="milestone-step ${hasSources ? 'done' : ''}" onclick="go('sources')">
+        <span class="milestone-num">${hasSources ? '✓' : '4'}</span>
+        <span class="milestone-title">4. Signal Stack</span>
+      </div>
+      <div class="milestone-divider"></div>
+      <div class="milestone-step ${hasBriefs ? 'done' : ''}" onclick="go('brief')">
+        <span class="milestone-num">${hasBriefs ? '✓' : '5'}</span>
+        <span class="milestone-title">5. Monday Brief</span>
+      </div>
+    </div>
+
     ${c ? `
       <div class="company-quick-banner">
         <div class="banner-company-info">
@@ -496,7 +874,7 @@ async function vSetup() {
           <button class="btn btn-primary" id="btn-save-co" onclick="saveCompanyDetails()">
             ${icon('check', 14)} <span>${c ? 'Update Company' : 'Create Company'}</span>
           </button>
-          ${!c ? `<button class="btn btn-outline" onclick="openNewCompanyModal()">${icon('plus', 14)} Quick Add</button>` : ''}
+          <button class="btn btn-secondary" onclick="loadDemoData()">${icon('sparkles', 14)} Load Demo Dataset</button>
         </div>
       </div>
 
@@ -756,9 +1134,9 @@ async function vProfile() {
 
       <div class="flex gap-2 flex-wrap mb-2">
         <span class="text-muted" style="font-size:12px;">Quick Examples:</span>
-        <button class="badge badge-indigo" onclick="setContextPrompt('Expanding into US and UK Master of Science STEM degrees and student visa advisory')">STEM Visa Expansion</button>
-        <button class="badge badge-cyan" onclick="setContextPrompt('Launching direct-to-consumer student education loan marketplace with competitive interest rates')">EdTech Loan Financing</button>
-        <button class="badge badge-emerald" onclick="setContextPrompt('Expanding into European universities with English-taught engineering programs in Germany and Ireland')">Europe University Pivot</button>
+        <button class="filter-pill-btn" onclick="setContextPrompt('Expanding into US and UK Master of Science STEM degrees and student visa advisory')">STEM Visa Expansion</button>
+        <button class="filter-pill-btn" onclick="setContextPrompt('Launching direct-to-consumer student education loan marketplace with competitive interest rates')">EdTech Loan Financing</button>
+        <button class="filter-pill-btn" onclick="setContextPrompt('Expanding into European universities with English-taught engineering programs in Germany and Ireland')">Europe University Pivot</button>
       </div>
 
       <div class="form-group">
@@ -1202,7 +1580,7 @@ async function setSrc(id, status) {
 }
 
 // -------------------------------------------------------------
-// TAB 6: INTELLIGENCE FEED
+// TAB 6: INTELLIGENCE FEED WITH VISUAL ANALYTICS & QUICK PILLS
 // -------------------------------------------------------------
 async function vFeed() {
   const container = $('view-container');
@@ -1219,8 +1597,21 @@ async function vFeed() {
       </div>
     </div>
 
-    <!-- Filter Card -->
+    <!-- TIER 2: Visual Signal Analytics Hero Banner -->
+    <div id="feed-stats-hero" class="mb-4"></div>
+
+    <!-- Filter Card with Quick-Filter Pills -->
     <div class="card mb-4">
+      <div class="flex items-center gap-2 flex-wrap mb-3 pb-3" style="border-bottom:1px solid var(--border-subtle);">
+        <span class="text-muted" style="font-size:12px;font-weight:600;">QUICK FILTERS:</span>
+        <button class="filter-pill-btn ${State.feedQuickFilter === null ? 'active' : ''}" onclick="applyQuickFilter(null)">All Signals</button>
+        <button class="filter-pill-btn ${State.feedQuickFilter === 'high_priority' ? 'active' : ''}" onclick="applyQuickFilter('high_priority')">🔥 High Priority (≥ 80)</button>
+        <button class="filter-pill-btn ${State.feedQuickFilter === 'opportunities' ? 'active' : ''}" onclick="applyQuickFilter('opportunities')">💡 Key Opportunities</button>
+        <button class="filter-pill-btn ${State.feedQuickFilter === 'threats' ? 'active' : ''}" onclick="applyQuickFilter('threats')">⚠️ Urgent Threats</button>
+        <button class="filter-pill-btn ${State.feedQuickFilter === 'verified' ? 'active' : ''}" onclick="applyQuickFilter('verified')">🛡️ Verified Primary Sources</button>
+        <button class="filter-pill-btn ${State.feedQuickFilter === 'internal' ? 'active' : ''}" onclick="applyQuickFilter('internal')">📂 Internal Customer Voice</button>
+      </div>
+
       <div class="grid-4 mb-3">
         <div class="form-group" style="margin-bottom:0;">
           <label class="form-label">Category</label>
@@ -1311,7 +1702,87 @@ async function vFeed() {
     <div id="feed-results"></div>
   `;
 
+  loadFeedStats();
   setupDropzone();
+  loadFeed();
+}
+
+async function loadFeedStats() {
+  const el = $('feed-stats-hero');
+  if (!el || !State.cid) return;
+  try {
+    const s = await api(`/companies/${State.cid}/stats`);
+    const q = s.quadrants || { customers: 0, competitors: 0, market: 0, internal: 0 };
+    const sig = s.signals || { opportunity: 0, threat: 0, neutral: 0 };
+    const total = s.total_items || 1;
+
+    el.innerHTML = `
+      <div class="grid-3">
+        <!-- Quadrant Distribution -->
+        <div class="card" style="padding:16px;">
+          <div class="text-muted" style="font-size:11px;text-transform:uppercase;margin-bottom:8px;font-weight:600;">4-Quadrant Distribution</div>
+          <div style="font-size:20px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">${s.total_items} Ingested Signals</div>
+          <div style="display:flex;height:8px;border-radius:var(--radius-full);overflow:hidden;background:var(--border-subtle);margin-bottom:8px;">
+            <div style="width:${(q.customers/total)*100}%;background:var(--accent-cyan);" title="Customers: ${q.customers}"></div>
+            <div style="width:${(q.competitors/total)*100}%;background:var(--accent-primary);" title="Competitors: ${q.competitors}"></div>
+            <div style="width:${(q.market/total)*100}%;background:var(--accent-emerald);" title="Market: ${q.market}"></div>
+            <div style="width:${(q.internal/total)*100}%;background:var(--accent-amber);" title="Internal: ${q.internal}"></div>
+          </div>
+          <div class="flex justify-between" style="font-size:11px;color:var(--text-muted);">
+            <span><strong style="color:var(--accent-cyan);">${q.customers}</strong> Cust</span>
+            <span><strong style="color:var(--accent-primary);">${q.competitors}</strong> Comp</span>
+            <span><strong style="color:var(--accent-emerald);">${q.market}</strong> Mkt</span>
+            <span><strong style="color:var(--accent-amber);">${q.internal}</strong> Int</span>
+          </div>
+        </div>
+
+        <!-- Opportunity vs Threat Ratio -->
+        <div class="card" style="padding:16px;">
+          <div class="text-muted" style="font-size:11px;text-transform:uppercase;margin-bottom:8px;font-weight:600;">Signal Sentiment Balance</div>
+          <div class="flex items-center justify-between mb-2">
+            <span style="font-size:14px;color:var(--accent-emerald);font-weight:700;">${sig.opportunity} Opportunities</span>
+            <span style="font-size:14px;color:var(--accent-rose);font-weight:700;">${sig.threat} Threats</span>
+          </div>
+          <div style="display:flex;height:8px;border-radius:var(--radius-full);overflow:hidden;background:var(--border-subtle);margin-bottom:8px;">
+            <div style="width:${((sig.opportunity || 1)/(total))*100}%;background:var(--accent-emerald);"></div>
+            <div style="width:${((sig.threat || 1)/(total))*100}%;background:var(--accent-rose);"></div>
+          </div>
+          <div class="text-muted" style="font-size:11px;">Balanced strategic decision input</div>
+        </div>
+
+        <!-- Average Score & High Priority -->
+        <div class="card" style="padding:16px;">
+          <div class="text-muted" style="font-size:11px;text-transform:uppercase;margin-bottom:8px;font-weight:600;">Average Intelligence Priority</div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div style="font-size:24px;font-weight:700;color:var(--accent-primary);">${s.avg_score}<span style="font-size:14px;color:var(--text-muted);">/100</span></div>
+              <div class="text-muted" style="font-size:11px;">Composite priority index</div>
+            </div>
+            <div style="text-align:right;">
+              <span class="badge badge-rose" style="font-size:13px;padding:4px 10px;">${s.high_priority_count} Critical</span>
+              <div class="text-muted" style="font-size:11px;margin-top:4px;">Score ≥ 80</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (e) {}
+}
+
+function applyQuickFilter(preset) {
+  State.feedQuickFilter = preset;
+  resetFeedFilters();
+  if (preset === 'high_priority') {
+    if ($('fr')) $('fr').value = '8';
+  } else if (preset === 'opportunities') {
+    if ($('ft')) $('ft').value = 'opportunity';
+  } else if (preset === 'threats') {
+    if ($('ft')) $('ft').value = 'threat';
+  } else if (preset === 'verified') {
+    if ($('fv')) $('fv').value = 'primary_source';
+  } else if (preset === 'internal') {
+    if ($('fc')) $('fc').value = 'internal';
+  }
   loadFeed();
 }
 
@@ -1364,6 +1835,7 @@ async function uploadInternalFile() {
     const res = await api('/companies/' + State.cid + '/upload', 'POST', fd, true);
     Toast.success('Upload Processed', `Stored ${res.findings_stored} customer findings with verbatim quotes.`);
     loadFeed();
+    loadFeedStats();
   });
 }
 
@@ -1381,6 +1853,7 @@ async function analyzeNow() {
     const res = await api('/companies/' + State.cid + '/analyze', 'POST');
     Toast.success('Analysis Complete', `Analyzed and ranked ${res.analyzed} intelligence items.`);
     loadFeed();
+    loadFeedStats();
   });
 }
 
@@ -1396,6 +1869,9 @@ async function loadFeed() {
 
   try {
     const rows = await api('/companies/' + State.cid + '/items?' + p.toString());
+    State.cachedItems = rows;
+    rows.forEach(r => { State.evidenceMap[r.id] = r; });
+
     if (!rows.length) {
       resEl.innerHTML = `
         <div class="empty-state card">
@@ -1416,6 +1892,24 @@ async function loadFeed() {
   } catch (e) {
     if (resEl) resEl.innerHTML = `<div class="card text-rose" style="padding:16px;">Failed to load feed: ${esc(e.message)}</div>`;
   }
+}
+
+// Mini Equalizer Spark-Bars Helper
+function renderMiniEqualizer(r) {
+  const rel = (r.relevance || 5) * 1.8;
+  const imp = (r.impact || 5) * 1.8;
+  const urg = (r.urgency || 5) * 1.8;
+  const cred = (r.source_reliability || 0.6) * 18;
+  const rec = (r.novelty || 0.7) * 18;
+  return `
+    <div class="spark-equalizer" title="Dimensions: Rel ${r.relevance}, Imp ${r.impact}, Urg ${r.urgency}, Cred ${Math.round((r.source_reliability||0)*100)}%">
+      <div class="spark-bar fill-indigo" style="height:${Math.max(4, Math.min(18, rel))}px;"></div>
+      <div class="spark-bar fill-cyan" style="height:${Math.max(4, Math.min(18, imp))}px;"></div>
+      <div class="spark-bar fill-rose" style="height:${Math.max(4, Math.min(18, urg))}px;"></div>
+      <div class="spark-bar fill-emerald" style="height:${Math.max(4, Math.min(18, cred))}px;"></div>
+      <div class="spark-bar fill-amber" style="height:${Math.max(4, Math.min(18, rec))}px;"></div>
+    </div>
+  `;
 }
 
 function renderFeedCards(rows) {
@@ -1450,8 +1944,9 @@ function renderFeedCards(rows) {
                 <span class="text-muted" style="font-size:12px;">${esc((r.published || r.discovered || '').slice(0, 10))}</span>
               </div>
               ${score != null ? `
-                <div class="flex items-center gap-1">
-                  <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">Composite Score:</span>
+                <div class="flex items-center gap-2">
+                  ${renderMiniEqualizer(r)}
+                  <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;">Score:</span>
                   <span style="font-size:16px;font-weight:700;color:${scoreColor};font-variant-numeric:tabular-nums;">${score}/100</span>
                 </div>
               ` : ''}
@@ -1493,9 +1988,12 @@ function renderFeedCards(rows) {
                 <span>Urg: <strong>${r.urgency ?? '-'}</strong>/10</span>
                 <span>Cred: <strong>${r.source_reliability ? Math.round(r.source_reliability * 100) + '%' : '-'}</strong></span>
               </div>
-              <a href="${esc(r.url)}" target="_blank" class="badge badge-neutral" style="text-decoration:none;">
-                <span>Original Source</span> ${icon('externalLink', 10)}
-              </a>
+              <div class="flex gap-2">
+                <button class="badge badge-indigo" onclick="inspectEvidence(${r.id})" style="cursor:pointer;">${icon('eye', 11)} Inspect Evidence</button>
+                <a href="${esc(r.url)}" target="_blank" class="badge badge-neutral" style="text-decoration:none;">
+                  <span>Original Link</span> ${icon('externalLink', 10)}
+                </a>
+              </div>
             </div>
           </div>
         `;
@@ -1513,6 +2011,7 @@ function renderFeedTable(rows) {
             <th>Date</th>
             <th>Category & Type</th>
             <th>Headline & Evidence</th>
+            <th>Equalizer</th>
             <th>Score</th>
             <th>Rel</th>
             <th>Imp</th>
@@ -1536,6 +2035,7 @@ function renderFeedTable(rows) {
                   </a>
                   ${a.what_happened ? `<div style="font-size:12px;color:var(--text-secondary);">${esc(a.what_happened)}</div>` : ''}
                 </td>
+                <td>${renderMiniEqualizer(r)}</td>
                 <td style="font-weight:700;color:var(--accent-primary);text-align:center;">${r.score != null ? Math.round(r.score) : '-'}</td>
                 <td style="text-align:center;">${r.relevance ?? '-'}</td>
                 <td style="text-align:center;">${r.impact ?? '-'}</td>
@@ -1551,7 +2051,7 @@ function renderFeedTable(rows) {
 }
 
 // -------------------------------------------------------------
-// TAB 7: MONDAY BRIEF & ACTION TRACKING
+// TAB 7: MONDAY BRIEF WITH EVIDENCE DRAWER & KANBAN MATRIX
 // -------------------------------------------------------------
 async function vBrief() {
   const [list, actions] = await Promise.all([
@@ -1568,6 +2068,7 @@ async function vBrief() {
         <p class="text-secondary" style="font-size:13px;">Decision-grade founder briefing report strictly constrained to cited evidence with prioritized actions</p>
       </div>
       <div class="flex gap-2">
+        <button class="btn btn-outline" onclick="openWebhookModal()">${icon('send', 13)} Dispatch Webhook</button>
         <button class="btn btn-primary" id="btn-run-brief" onclick="genBrief()">
           ${icon('sparkles', 14)} <span>Run Weekly Pipeline (Crawl &bull; Analyse &bull; Brief)</span>
         </button>
@@ -1591,7 +2092,7 @@ async function vBrief() {
     <!-- Brief Reader Container -->
     <div id="brief-content-view"></div>
 
-    <!-- Action Tracking Section -->
+    <!-- TIER 2: Action Tracking with Kanban / Table Switcher -->
     <div class="card mt-4">
       <div class="card-header">
         <div class="card-title-group">
@@ -1601,42 +2102,14 @@ async function vBrief() {
             <div class="card-subtitle">Recommended founder and leadership initiatives assigned from executive briefs</div>
           </div>
         </div>
+        <div class="flex gap-2">
+          <button class="filter-pill-btn ${State.actionViewMode === 'kanban' ? 'active' : ''}" onclick="setActionView('kanban')">Kanban Board</button>
+          <button class="filter-pill-btn ${State.actionViewMode === 'table' ? 'active' : ''}" onclick="setActionView('table')">Table View</button>
+        </div>
       </div>
 
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Initiative / Task</th>
-              <th>Owner</th>
-              <th>Priority</th>
-              <th>Rationale</th>
-              <th>Status Workflow</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${actions.length ? actions.map(a => {
-              let priBadge = `<span class="badge badge-neutral">${esc(a.priority)}</span>`;
-              if (a.priority === 'high') priBadge = `<span class="badge badge-rose">High</span>`;
-              if (a.priority === 'medium') priBadge = `<span class="badge badge-amber">Medium</span>`;
-              if (a.priority === 'low') priBadge = `<span class="badge badge-cyan">Low</span>`;
-
-              return `
-                <tr>
-                  <td style="font-weight:600;color:var(--text-primary);max-width:320px;">${esc(a.action)}</td>
-                  <td><span class="badge badge-indigo">${esc(a.owner || 'Founder')}</span></td>
-                  <td>${priBadge}</td>
-                  <td style="font-size:12px;color:var(--text-secondary);max-width:280px;">${esc(a.reason || '')}</td>
-                  <td>
-                    <select onchange="setAct(${a.id}, this.value)" style="padding:4px 8px;font-size:12px;border-radius:var(--radius-sm);">
-                      ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s.toUpperCase()}</option>`).join('')}
-                    </select>
-                  </td>
-                </tr>
-              `;
-            }).join('') : '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px;">No action items recorded yet.</td></tr>'}
-          </tbody>
-        </table>
+      <div id="actions-container">
+        ${State.actionViewMode === 'kanban' ? renderActionsKanban(actions) : renderActionsTable(actions)}
       </div>
     </div>
   `;
@@ -1648,11 +2121,101 @@ async function vBrief() {
       <div class="empty-state card">
         <div class="empty-state-icon">${icon('newspaper', 32)}</div>
         <h4 class="empty-state-title">No Briefs Generated Yet</h4>
-        <p class="empty-state-desc">Click "Run Weekly Pipeline" above to crawl approved sources, analyse new signals, and generate your first Monday Morning Brief.</p>
-        <button class="btn btn-primary" onclick="genBrief()">${icon('sparkles', 14)} Run Weekly Pipeline Now</button>
+        <p class="empty-state-desc">Click "Run Weekly Pipeline" or "Load Demo Dataset" to populate and generate the executive Monday Morning Brief.</p>
+        <button class="btn btn-primary" onclick="loadDemoData()">${icon('sparkles', 14)} Load Demo Dataset Now</button>
       </div>
     `;
   }
+}
+
+function setActionView(mode) {
+  State.actionViewMode = mode;
+  localStorage.setItem('ss_action_view', mode);
+  vBrief();
+}
+
+function renderActionsKanban(actions) {
+  const cols = [
+    { id: 'open', title: 'Open Initiatives', color: 'accent-primary' },
+    { id: 'in_progress', title: 'In Progress', color: 'accent-cyan' },
+    { id: 'done', title: 'Completed', color: 'accent-emerald' },
+    { id: 'dropped', title: 'Dropped / Backlog', color: 'text-muted' },
+  ];
+
+  return `
+    <div class="kanban-grid">
+      ${cols.map(c => {
+        const colActs = actions.filter(a => a.status === c.id);
+        return `
+          <div class="kanban-col">
+            <div class="kanban-col-header">
+              <span style="font-size:12.5px;font-weight:700;color:var(--text-primary);">${c.title}</span>
+              <span class="badge badge-neutral">${colActs.length}</span>
+            </div>
+            <div class="kanban-col-body">
+              ${colActs.length ? colActs.map(a => `
+                <div class="kanban-card">
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="badge ${a.priority === 'high' ? 'badge-rose' : a.priority === 'medium' ? 'badge-amber' : 'badge-cyan'}">${esc(a.priority)}</span>
+                    <span class="badge badge-indigo" style="font-size:10px;">${esc(a.owner || 'Owner')}</span>
+                  </div>
+                  <div style="font-weight:600;font-size:13px;color:var(--text-primary);margin-bottom:6px;line-height:1.4;">
+                    ${esc(a.action)}
+                  </div>
+                  ${a.reason ? `<div style="font-size:11.5px;color:var(--text-secondary);margin-bottom:8px;">${esc(a.reason)}</div>` : ''}
+                  <div class="flex justify-between items-center pt-2" style="border-top:1px dashed var(--border-subtle);">
+                    <select onchange="setAct(${a.id}, this.value)" style="font-size:11px;padding:2px 4px;">
+                      ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>Move: ${s.toUpperCase()}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+              `).join('') : '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:12px;">No items in this column.</div>'}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderActionsTable(actions) {
+  return `
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Initiative / Task</th>
+            <th>Owner</th>
+            <th>Priority</th>
+            <th>Rationale</th>
+            <th>Status Workflow</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${actions.length ? actions.map(a => {
+            let priBadge = `<span class="badge badge-neutral">${esc(a.priority)}</span>`;
+            if (a.priority === 'high') priBadge = `<span class="badge badge-rose">High</span>`;
+            if (a.priority === 'medium') priBadge = `<span class="badge badge-amber">Medium</span>`;
+            if (a.priority === 'low') priBadge = `<span class="badge badge-cyan">Low</span>`;
+
+            return `
+              <tr>
+                <td style="font-weight:600;color:var(--text-primary);max-width:320px;">${esc(a.action)}</td>
+                <td><span class="badge badge-indigo">${esc(a.owner || 'Founder')}</span></td>
+                <td>${priBadge}</td>
+                <td style="font-size:12px;color:var(--text-secondary);max-width:280px;">${esc(a.reason || '')}</td>
+                <td>
+                  <select onchange="setAct(${a.id}, this.value)" style="padding:4px 8px;font-size:12px;border-radius:var(--radius-sm);">
+                    ${['open', 'in_progress', 'done', 'dropped'].map(s => `<option value="${s}" ${s === a.status ? 'selected' : ''}>${s.toUpperCase()}</option>`).join('')}
+                  </select>
+                </td>
+              </tr>
+            `;
+          }).join('') : '<tr><td colspan="5" class="text-muted" style="text-align:center;padding:24px;">No action items recorded yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
 async function showBrief(id) {
@@ -1666,6 +2229,7 @@ async function showBrief(id) {
       <a href="/api/briefs/${id}/export?format=md" class="btn btn-sm btn-outline">
         ${icon('download', 12)} <span>Download Markdown</span>
       </a>
+      <button class="btn btn-sm btn-outline" onclick="window.print()">${icon('newspaper', 12)} Print / PDF</button>
     `;
   }
 
@@ -1678,7 +2242,10 @@ async function showBrief(id) {
       viewEl.innerHTML = `
         <div class="brief-paper-container">
           <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-subtle);padding-bottom:12px;margin-bottom:20px;">
-            <span class="badge badge-indigo">CONFIDENTIAL EXECUTIVE INTELLIGENCE</span>
+            <div class="flex items-center gap-2">
+              <span class="badge badge-indigo">CONFIDENTIAL EXECUTIVE INTELLIGENCE</span>
+              <span class="text-muted" style="font-size:11px;">(Click any [ID] pill to inspect verified evidence)</span>
+            </div>
             <span class="text-muted" style="font-size:12px;">Generated: ${esc(b.created.slice(0, 16))}</span>
           </div>
           ${htmlBody}
@@ -1690,6 +2257,7 @@ async function showBrief(id) {
   }
 }
 
+// Format Markdown with Interactive Citation Pills
 function formatBriefMarkdown(md) {
   if (!md) return '<p class="text-muted">Empty report content.</p>';
   const lines = md.split('\n');
@@ -1700,8 +2268,8 @@ function formatBriefMarkdown(md) {
     let s = esc(line);
     // Bold highlight
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-    // Citation pills like [12] or [4, 5]
-    s = s.replace(/\[(\d+(?:,\s*\d+)*)\]/g, '<span class="cite-pill" title="Evidence record #$1">[$1]</span>');
+    // Citation pills like [12] or [4, 5] -> Made clickable for Evidence Peek!
+    s = s.replace(/\[(\d+)\]/g, `<span class="cite-pill" onclick="inspectEvidence($1)" title="Click to inspect evidence record #$1">[$1]</span>`);
     // Web links
     s = s.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank">$1</a>');
 
@@ -1724,6 +2292,38 @@ function formatBriefMarkdown(md) {
   }
   if (inList) out.push('</ul>');
   return out.join('\n');
+}
+
+// Webhook Dispatch Modal
+async function openWebhookModal() {
+  try {
+    const res = await api(`/companies/${State.cid}/webhook/test`);
+    const payloadText = res.payload.text;
+
+    Modal.open({
+      title: 'Executive Webhook & Dispatch Simulation',
+      content: `
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+          This formatted payload is pushed on Monday mornings to Slack, Discord, or leadership email channels:
+        </div>
+        <textarea id="webhook-text" rows="8" readonly style="font-family:var(--font-mono);font-size:12px;">${esc(payloadText)}</textarea>
+      `,
+      footer: `
+        <button class="btn btn-outline" onclick="Modal.close()">Close</button>
+        <button class="btn btn-primary" onclick="copyWebhookPayload()">${icon('copy', 14)} Copy Slack / Discord Markdown</button>
+      `
+    });
+  } catch (e) {
+    Toast.error('Webhook Error', e.message);
+  }
+}
+
+function copyWebhookPayload() {
+  const el = $('webhook-text');
+  if (el) {
+    navigator.clipboard.writeText(el.value);
+    Toast.success('Copied', 'Webhook payload copied to clipboard.');
+  }
 }
 
 async function setAct(id, status) {
@@ -2089,4 +2689,3 @@ async function initApp() {
 }
 
 window.addEventListener('DOMContentLoaded', initApp);
-

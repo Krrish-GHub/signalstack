@@ -18,6 +18,7 @@ if __package__ is None or __package__ == "":
     import app.analysis as analysis
     import app.crawler as crawler
     import app.db as db
+    import app.demo as demo
     import app.fetch as fetch
     import app.internal as internal
     import app.interview as interview
@@ -26,7 +27,7 @@ if __package__ is None or __package__ == "":
     import app.scheduler as scheduler
     import app.sources as sources
 else:
-    from . import analysis, crawler, db, fetch, internal, interview, llm, research, scheduler, sources
+    from . import analysis, crawler, db, demo, fetch, internal, interview, llm, research, scheduler, sources
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
 
@@ -550,6 +551,107 @@ def changes(cid: int):
     for r in rows:
         r["result"] = db.jload(r["result"], {})
     return rows
+
+
+class LLMConfigIn(BaseModel):
+    provider: str
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    ollama_url: Optional[str] = None
+
+
+@app.post("/api/demo/seed")
+def seed_demo():
+    return demo.seed_demo_company()
+
+
+@app.get("/api/llm/config")
+def get_llm_config():
+    provider = llm.get_provider()
+    import os
+    model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash") if provider == "gemini" else os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    if provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+    return {
+        "provider": provider,
+        "model": model,
+        "has_gemini_key": bool(os.getenv("GEMINI_API_KEY")),
+        "has_groq_key": bool(os.getenv("GROQ_API_KEY")),
+        "ollama_url": os.getenv("OLLAMA_URL", "http://localhost:11434"),
+        "reachable": llm.available(),
+    }
+
+
+@app.post("/api/llm/config")
+def save_llm_config(body: LLMConfigIn):
+    if body.provider not in ("gemini", "groq", "ollama"):
+        raise HTTPException(400, "Provider must be gemini, groq, or ollama")
+    import os
+    os.environ["LLM_PROVIDER"] = body.provider
+    if body.api_key:
+        if body.provider == "gemini":
+            os.environ["GEMINI_API_KEY"] = body.api_key.strip()
+        elif body.provider == "groq":
+            os.environ["GROQ_API_KEY"] = body.api_key.strip()
+    if body.model:
+        if body.provider == "gemini":
+            os.environ["GEMINI_MODEL"] = body.model.strip()
+        elif body.provider == "groq":
+            os.environ["GROQ_MODEL"] = body.model.strip()
+        elif body.provider == "ollama":
+            os.environ["OLLAMA_MODEL"] = body.model.strip()
+    if body.ollama_url:
+        os.environ["OLLAMA_URL"] = body.ollama_url.strip()
+
+    reachable = llm.available()
+    return {
+        "ok": True,
+        "provider": body.provider,
+        "reachable": reachable,
+    }
+
+
+@app.get("/api/companies/{cid}/stats")
+def get_company_stats(cid: int):
+    company_or_404(cid)
+    quadrants = {
+        "customers": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND category='customers'", (cid,), one=True)["n"],
+        "competitors": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND category='competitors'", (cid,), one=True)["n"],
+        "market": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND category='market'", (cid,), one=True)["n"],
+        "internal": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND category='internal'", (cid,), one=True)["n"],
+    }
+    signals = {
+        "opportunity": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND signal_type='opportunity'", (cid,), one=True)["n"],
+        "threat": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND signal_type='threat'", (cid,), one=True)["n"],
+        "neutral": db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND (signal_type='neutral' OR signal_type IS NULL)", (cid,), one=True)["n"],
+    }
+    avg_score_row = db.q("SELECT AVG(score) a, COUNT(*) total FROM items WHERE company_id=? AND score IS NOT NULL", (cid,), one=True)
+    high_priority = db.q("SELECT COUNT(*) n FROM items WHERE company_id=? AND score >= 80", (cid,), one=True)["n"]
+    return {
+        "quadrants": quadrants,
+        "signals": signals,
+        "avg_score": round(avg_score_row["a"] or 0, 1),
+        "total_items": avg_score_row["total"] or 0,
+        "high_priority_count": high_priority,
+    }
+
+
+@app.post("/api/companies/{cid}/webhook/test")
+def test_webhook(cid: int, platform: str = "slack"):
+    company = company_or_404(cid)
+    latest_brief = db.q("SELECT * FROM briefs WHERE company_id=? AND kind!='audit' ORDER BY id DESC LIMIT 1", (cid,), one=True)
+    if not latest_brief:
+        raise HTTPException(404, "No generated briefs found for this company")
+    top_actions = db.q("SELECT action, owner, priority FROM actions WHERE company_id=? AND status!='done' LIMIT 3", (cid,))
+
+    actions_text = "\n".join([f"• *[{a['priority'].upper()}]* {a['action']} (Owner: {a['owner']})" for a in top_actions]) or "• No active pending initiatives."
+    payload = {
+        "text": f"🚀 *{company['name']} — Monday Morning Intelligence Brief*\n"
+                f"*Period:* Week of {latest_brief['created'][:10]}\n\n"
+                f"*Top Recommended Initiatives:*\n{actions_text}\n\n"
+                f"🔗 _Read full briefing dossier on Signal Stack dashboard: http://localhost:8000_"
+    }
+    return {"ok": True, "platform": platform, "payload": payload}
 
 
 @app.get("/")
