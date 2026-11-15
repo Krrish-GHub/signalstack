@@ -205,5 +205,6 @@ def next_runs(company_id):
     out = {}
     for suffix in ("brief", "monitor", "audit"):
         job = scheduler.get_job(f"{suffix}-{company_id}")
-        out[suffix] = job.next_run_time.isoformat() if job and job.next_run_time else None
+        nxt = getattr(job, "next_run_time", None) if job else None
+        out[suffix] = nxt.isoformat() if nxt else None
     return out

@@ -343,7 +343,8 @@ def md_to_html(md):
     for line in md.splitlines():
         esc = html_lib.escape(line)
         esc = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", esc)
-        esc = re.sub(r"(https?://[^\s<]+)", r'<a href="\1">\1</a>', esc)
+        esc = re.sub(r"\[(\d+(?:,\s*\d+)*)\]", r'<span class="cite-tag">[\1]</span>', esc)
+        esc = re.sub(r"(https?://[^\s<]+)", r'<a href="\1" target="_blank">\1</a>', esc)
         if line.startswith("- ") or re.match(r"^\s+- ", line):
             if not in_list:
                 out.append("<ul>")
@@ -353,7 +354,9 @@ def md_to_html(md):
         if in_list:
             out.append("</ul>")
             in_list = False
-        if line.startswith("## "):
+        if line.startswith("### "):
+            out.append(f"<h3>{esc[4:]}</h3>")
+        elif line.startswith("## "):
             out.append(f"<h2>{esc[3:]}</h2>")
         elif line.startswith("# "):
             out.append(f"<h1>{esc[2:]}</h1>")
@@ -371,12 +374,125 @@ def export_brief(bid: int, format: str = "md"):
         raise HTTPException(404, "Brief not found")
     if format == "html":
         body = md_to_html(row["markdown"])
-        page = (
-            "<!doctype html><html><head><meta charset='utf-8'><title>" + html_lib.escape(row["title"] or "Brief") + "</title>"
-            "<style>body{font-family:Arial,sans-serif;max-width:760px;margin:24px auto;line-height:1.5;color:#111}"
-            "h1{font-size:22px}h2{font-size:17px;border-bottom:1px solid #ccc;padding-bottom:3px;margin-top:24px}</style></head><body>"
-            + body + "</body></html>"
-        )
+        page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html_lib.escape(row["title"] or "Signal Stack Brief")}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {{
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 0 24px 60px 24px;
+      line-height: 1.65;
+      color: #1e293b;
+      background-color: #f8fafc;
+    }}
+    .brief-card {{
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.06);
+    }}
+    .brief-badge {{
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background-color: #e0e7ff;
+      color: #4338ca;
+      margin-bottom: 12px;
+    }}
+    h1 {{
+      font-size: 26px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+      margin-top: 0;
+      margin-bottom: 8px;
+    }}
+    h2 {{
+      font-size: 17px;
+      font-weight: 700;
+      color: #4338ca;
+      letter-spacing: -0.01em;
+      border-bottom: 2px solid #e2e8f0;
+      padding-bottom: 6px;
+      margin-top: 36px;
+      margin-bottom: 14px;
+    }}
+    h3 {{
+      font-size: 15px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-top: 20px;
+      margin-bottom: 8px;
+    }}
+    p {{
+      margin: 10px 0;
+      color: #334155;
+    }}
+    ul {{
+      padding-left: 22px;
+      margin: 12px 0;
+    }}
+    li {{
+      margin-bottom: 8px;
+      color: #334155;
+    }}
+    a {{
+      color: #4f46e5;
+      text-decoration: none;
+    }}
+    a:hover {{
+      text-decoration: underline;
+    }}
+    .cite-tag {{
+      display: inline-block;
+      background-color: #f1f5f9;
+      color: #4338ca;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      margin: 0 2px;
+    }}
+    .header-meta {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      font-size: 12px;
+      color: #64748b;
+    }}
+    @media print {{
+      body {{ background: #fff; padding: 0; margin: 0; }}
+      .brief-card {{ border: none; box-shadow: none; padding: 0; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="brief-card">
+    <div class="header-meta">
+      <span class="brief-badge">SIGNAL STACK // EXECUTIVE INTELLIGENCE DOSSIER</span>
+      <span>Generated: {html_lib.escape(row["created"][:16])}</span>
+    </div>
+    {body}
+  </div>
+</body>
+</html>"""
         return HTMLResponse(page)
     return PlainTextResponse(row["markdown"], headers={"Content-Disposition": f"attachment; filename=brief-{bid}.md"})
 

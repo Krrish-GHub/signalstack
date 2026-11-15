@@ -37,7 +37,21 @@ class LLMError(Exception):
 
 def _ollama(system, user, json_mode, temperature):
     base = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    model = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+    model = os.getenv("OLLAMA_MODEL")
+    if not model:
+        try:
+            r = httpx.get(base + "/api/tags", timeout=3)
+            tags = [m["name"] for m in r.json().get("models", [])]
+            for candidate in ("llama3.1:8b", "qwen3:8b", "qwen2.5-coder:7b", "qwen3.5:4b"):
+                if any(candidate in t for t in tags):
+                    model = candidate
+                    break
+            if not model and tags:
+                model = tags[0]
+        except Exception:
+            pass
+    if not model:
+        model = "llama3.1:8b"
     timeout = float(os.getenv("LLM_TIMEOUT", "180"))
     payload = {
         "model": model,
